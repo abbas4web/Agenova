@@ -54,12 +54,28 @@
     @apply prose-headings:text-white prose-headings:font-semibold;
     @apply prose-h1:text-lg prose-h2:text-base prose-h3:text-sm;
     @apply prose-strong:text-white prose-strong:font-semibold;
-    @apply prose-code:text-brand-300 prose-code:bg-surface-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs;
-    @apply prose-pre:bg-surface-800 prose-pre:border prose-pre:border-surface-700;
     @apply prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5;
-    @apply prose-blockquote:border-brand-500 prose-blockquote:text-slate-400;
-    @apply prose-a:text-brand-400 prose-a:no-underline hover:prose-a:underline;
-    @apply prose-hr:border-surface-700;
+    @apply prose-blockquote:border-indigo-500 prose-blockquote:text-slate-400;
+    @apply prose-a:text-indigo-400 prose-a:no-underline hover:prose-a:underline;
+    @apply prose-hr:border-slate-700;
+  }
+
+  /* prose modifier overrides using standard selectors (avoids custom-color @apply issues) */
+  .prose-chat :where(code):not(:where([class~='not-prose'] *)) {
+    @apply text-indigo-300 rounded text-xs;
+    background-color: rgb(30 41 59 / 0.8); /* surface-800 equivalent */
+    padding: 0.125rem 0.25rem;
+  }
+
+  .prose-chat :where(pre):not(:where([class~='not-prose'] *)) {
+    background-color: rgb(30 41 59 / 0.8); /* surface-800 equivalent */
+    border: 1px solid rgb(51 65 85 / 0.6);  /* surface-700 equivalent */
+  }
+
+  .prose-chat :where(pre code):not(:where([class~='not-prose'] *)) {
+    background-color: transparent;
+    padding: 0;
+    border-radius: 0;
   }
 }
 
