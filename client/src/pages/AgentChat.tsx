@@ -78,7 +78,7 @@ export default function AgentChat() {
   const colors = agent ? getAgentColors(agent.color as AgentColor) : null;
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col min-w-0 overflow-hidden">
       {/* Chat window — no duplicate header, TopBar already shows agent */}
       <ChatWindow
         messages={messages}
