@@ -74,6 +74,12 @@ export class ChatController {
         messageId: assistantMessageId,
       });
     } catch (err) {
+      // Expose rate-limit errors with a 429 so the client shows the right message
+      const error = err as Error & { code?: string };
+      if (error.code === 'RATE_LIMIT') {
+        res.status(429).json({ error: error.message });
+        return;
+      }
       next(err);
     }
   }

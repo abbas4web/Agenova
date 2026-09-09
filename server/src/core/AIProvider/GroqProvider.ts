@@ -11,11 +11,19 @@ type GroqMessage = {
   name?: string;
 };
 
+// Models that do not support function/tool calling
+const NO_TOOL_MODELS = [
+  'openai/gpt-oss-20b',
+  'openai/gpt-oss-120b',
+  'openai/gpt-oss-safeguard-20b',
+];
+
 export class GroqProvider implements AIProvider {
   readonly providerName = 'groq';
   readonly modelName: string;
 
   private client: Groq;
+  private supportsTools: boolean;
 
   constructor() {
     if (!env.groq.apiKey) {
@@ -23,17 +31,31 @@ export class GroqProvider implements AIProvider {
     }
     this.client = new Groq({ apiKey: env.groq.apiKey });
     this.modelName = env.groq.model;
+    this.supportsTools = !NO_TOOL_MODELS.includes(this.modelName);
+
+    if (!this.supportsTools) {
+      logger.info(
+        { model: this.modelName },
+        'GroqProvider: tool calling disabled for this model — agents will rely on base knowledge'
+      );
+    }
   }
 
   async chat(messages: ChatMessage[], tools?: ToolDefinition[]): Promise<AIResponse> {
-    const groqMessages: GroqMessage[] = messages.map((m) => ({
+    // Filter out 'tool' role messages for models that don't support function calling
+    const filteredMessages = this.supportsTools
+      ? messages
+      : messages.filter((m) => m.role !== 'tool');
+
+    const groqMessages: GroqMessage[] = filteredMessages.map((m) => ({
       role: m.role as GroqMessage['role'],
       content: m.content,
       ...(m.toolName ? { name: m.toolName } : {}),
     }));
 
+    // Only pass tools if the model supports them
     const groqTools =
-      tools && tools.length > 0
+      this.supportsTools && tools && tools.length > 0
         ? tools.map((t) => ({
             type: 'function' as const,
             function: {
@@ -48,8 +70,7 @@ export class GroqProvider implements AIProvider {
       const completion = await this.client.chat.completions.create({
         model: this.modelName,
         messages: groqMessages,
-        tools: groqTools,
-        tool_choice: groqTools ? 'auto' : undefined,
+        ...(groqTools ? { tools: groqTools, tool_choice: 'auto' } : {}),
       });
 
       const choice = completion.choices[0];
@@ -77,6 +98,17 @@ export class GroqProvider implements AIProvider {
       };
     } catch (err) {
       logger.error({ err, provider: this.providerName }, 'Groq API call failed');
+
+      // Translate rate-limit and quota errors into user-friendly messages
+      const message = err instanceof Error ? err.message : '';
+      if (message.includes('429') || message.includes('rate_limit')) {
+        const friendly = new Error(
+          "I'm receiving too many requests right now. Please wait a moment and try again."
+        );
+        (friendly as NodeJS.ErrnoException).code = 'RATE_LIMIT';
+        throw friendly;
+      }
+
       throw err;
     }
   }
