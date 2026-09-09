@@ -10,14 +10,13 @@ import type {
   UserPreferences,
 } from '../types';
 
-// ── Axios instance ─────────────────────────────────────────────────────────────
+// ── Authenticated Axios instance ───────────────────────────────────────────────
 const api = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
-  timeout: 60_000, // AI calls can be slow
+  timeout: 60_000,
 });
 
-// ── Auth token injection ───────────────────────────────────────────────────────
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('agentora_token');
   if (token) {
@@ -26,7 +25,6 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// ── Response error normalisation ──────────────────────────────────────────────
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ error: string; details?: string }>) => {
@@ -34,6 +32,21 @@ api.interceptors.response.use(
       error.response?.data?.error ??
       error.message ??
       'An unexpected error occurred.';
+    return Promise.reject(new Error(message));
+  }
+);
+
+// ── Public Axios instance (no auth header) ────────────────────────────────────
+const publicApi = axios.create({
+  baseURL: '/api',
+  headers: { 'Content-Type': 'application/json' },
+  timeout: 15_000,
+});
+
+publicApi.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError<{ error: string }>) => {
+    const message = error.response?.data?.error ?? error.message ?? 'Request failed.';
     return Promise.reject(new Error(message));
   }
 );
@@ -60,15 +73,15 @@ export const authApi = {
   },
 };
 
-// ── Agents endpoints ──────────────────────────────────────────────────────────
+// ── Agents endpoints — public, no auth required ───────────────────────────────
 export const agentsApi = {
   getAll: async (): Promise<Agent[]> => {
-    const { data } = await api.get<{ agents: Agent[] }>('/agents');
+    const { data } = await publicApi.get<{ agents: Agent[] }>('/agents');
     return data.agents;
   },
 
   getOne: async (id: string): Promise<Agent> => {
-    const { data } = await api.get<{ agent: Agent }>(`/agents/${id}`);
+    const { data } = await publicApi.get<{ agent: Agent }>(`/agents/${id}`);
     return data.agent;
   },
 };

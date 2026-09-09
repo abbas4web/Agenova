@@ -12,13 +12,20 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
   JWT_EXPIRES_IN: z.string().default('7d'),
 
-  AI_PROVIDER: z.enum(['gemini', 'groq']).default('gemini'),
+  // Supported providers: gemini | groq | openrouter
+  AI_PROVIDER: z.enum(['gemini', 'groq', 'openrouter']).default('openrouter'),
 
+  // Gemini
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-1.5-flash'),
 
+  // Groq
   GROQ_API_KEY: z.string().optional(),
-  GROQ_MODEL: z.string().default('llama-3.1-70b-versatile'),
+  GROQ_MODEL: z.string().default('openai/gpt-oss-20b'),
+
+  // OpenRouter
+  OPENROUTER_API_KEY: z.string().optional(),
+  OPENROUTER_MODEL: z.string().default('meta-llama/llama-3.3-70b-instruct:free'),
 
   RATE_LIMIT_WINDOW_MS: z.string().default('60000'),
   RATE_LIMIT_MAX_REQUESTS: z.string().default('60'),
@@ -54,6 +61,11 @@ export const env = {
   groq: {
     apiKey: parsed.data.GROQ_API_KEY ?? '',
     model: parsed.data.GROQ_MODEL,
+  },
+
+  openRouter: {
+    apiKey: parsed.data.OPENROUTER_API_KEY ?? '',
+    model: parsed.data.OPENROUTER_MODEL,
   },
 
   rateLimit: {

@@ -21,7 +21,6 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
   error: null,
 
   fetchAgents: async () => {
-    if (get().agents.length > 0) return; // Already loaded
     set({ isLoading: true, error: null });
     try {
       const agents = await agentsApi.getAll();
