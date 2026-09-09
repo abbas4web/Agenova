@@ -1,12 +1,18 @@
-import { useState } from 'react';
-import { User, Palette, Lock, ChevronRight, Check } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { User, Palette, Lock, ChevronRight, Check, History, Trash2, MessageSquare } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
+import { useChatStore } from '../store/chatStore';
+import { useAgentsStore } from '../store/agentsStore';
 import { usersApi } from '../services/api';
 import Avatar from '../components/common/Avatar';
 import Button from '../components/common/Button';
+import AgentIcon from '../components/common/AgentIcon';
+import { getAgentColors } from '../utils/agentColors';
+import type { AgentColor } from '../types';
 import { cn } from '../utils/cn';
+import { formatDistanceToNow } from 'date-fns';
 
-type Section = 'profile' | 'appearance' | 'security';
+type Section = 'profile' | 'history' | 'appearance' | 'security';
 
 const THEMES = [
   { id: 'dark', label: 'Dark', description: 'Easy on the eyes' },
@@ -16,15 +22,17 @@ const THEMES = [
 
 export default function Settings() {
   const { user, setUser } = useAuthStore();
+  const { conversations, fetchConversations, deleteConversation } = useChatStore();
+  const { agents, getAgent, fetchAgents } = useAgentsStore();
   const [section, setSection] = useState<Section>('profile');
 
-  // Profile form state
+  // Profile
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [profileError, setProfileError] = useState('');
 
-  // Password form state
+  // Password
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -35,6 +43,16 @@ export default function Settings() {
   // Theme
   const currentTheme = user?.preferences?.theme ?? 'dark';
   const [themeSaving, setThemeSaving] = useState(false);
+
+  // History
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (section === 'history') {
+      fetchConversations();
+      fetchAgents();
+    }
+  }, [section, fetchConversations, fetchAgents]);
 
   async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -93,10 +111,20 @@ export default function Settings() {
     }
   }
 
+  async function handleDeleteConversation(id: string) {
+    setDeletingId(id);
+    try {
+      await deleteConversation(id);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   const navItems: { id: Section; label: string; icon: React.ReactNode }[] = [
-    { id: 'profile', label: 'Profile', icon: <User size={15} /> },
+    { id: 'profile',    label: 'Profile',    icon: <User size={15} /> },
+    { id: 'history',    label: 'History',    icon: <History size={15} /> },
     { id: 'appearance', label: 'Appearance', icon: <Palette size={15} /> },
-    { id: 'security', label: 'Security', icon: <Lock size={15} /> },
+    { id: 'security',   label: 'Security',   icon: <Lock size={15} /> },
   ];
 
   return (
@@ -141,11 +169,11 @@ export default function Settings() {
 
           {/* Content */}
           <div className="flex-1 min-w-0">
-            {/* ── Profile ─────────────────────────────────────────── */}
+
+            {/* ── Profile ──────────────────────────────────────────── */}
             {section === 'profile' && (
               <div className="glass rounded-2xl p-6">
                 <h2 className="text-base font-semibold text-white mb-6">Profile</h2>
-
                 {user && (
                   <div className="flex items-center gap-4 mb-6 pb-6 border-b border-surface-700/40">
                     <Avatar name={user.displayName} size="lg" />
@@ -155,7 +183,6 @@ export default function Settings() {
                     </div>
                   </div>
                 )}
-
                 <form onSubmit={handleSaveProfile} className="space-y-4">
                   <div>
                     <label htmlFor="displayName" className="block text-xs font-medium text-slate-400 mb-1.5">
@@ -169,9 +196,7 @@ export default function Settings() {
                       className={inputClass}
                     />
                   </div>
-
                   {profileError && <p className="text-xs text-red-400">{profileError}</p>}
-
                   <div className="flex items-center gap-3">
                     <Button type="submit" isLoading={profileSaving} size="sm">
                       Save changes
@@ -186,11 +211,86 @@ export default function Settings() {
               </div>
             )}
 
-            {/* ── Appearance ──────────────────────────────────────── */}
+            {/* ── History ──────────────────────────────────────────── */}
+            {section === 'history' && (
+              <div className="glass rounded-2xl p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-base font-semibold text-white">Conversation History</h2>
+                  <span className="text-xs text-slate-500 bg-surface-800 px-2 py-1 rounded-lg">
+                    {conversations.length} conversation{conversations.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                {conversations.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <MessageSquare size={32} className="text-slate-700 mb-3" />
+                    <p className="text-sm text-slate-500">No conversations yet</p>
+                    <p className="text-xs text-slate-600 mt-1">Start chatting with an agent to see history here</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1 scrollbar-hide">
+                    {conversations.map((conv) => {
+                      const agent = getAgent(conv.agentId);
+                      const colors = agent ? getAgentColors(agent.color as AgentColor) : null;
+
+                      return (
+                        <div
+                          key={conv.id}
+                          className="flex items-center gap-3 px-3 py-3 rounded-xl bg-surface-800/40 border border-surface-700/30 group hover:border-surface-600/50 transition-all"
+                        >
+                          {/* Agent icon */}
+                          <div
+                            className={cn(
+                              'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
+                              colors?.bgLight ?? 'bg-surface-700',
+                              colors?.text ?? 'text-slate-400'
+                            )}
+                          >
+                            {agent ? (
+                              <AgentIcon iconKey={agent.icon} size={15} strokeWidth={1.75} />
+                            ) : (
+                              <MessageSquare size={15} />
+                            )}
+                          </div>
+
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-slate-200 truncate font-medium">
+                              {conv.title}
+                            </p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {agent && (
+                                <span className={cn('text-[10px] font-medium', colors?.text ?? 'text-slate-500')}>
+                                  {agent.name}
+                                </span>
+                              )}
+                              <span className="text-[10px] text-slate-600">
+                                {formatDistanceToNow(new Date(conv.updatedAt), { addSuffix: true })}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Delete */}
+                          <button
+                            onClick={() => handleDeleteConversation(conv.id)}
+                            disabled={deletingId === conv.id}
+                            aria-label={`Delete: ${conv.title}`}
+                            className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-all disabled:opacity-50"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Appearance ───────────────────────────────────────── */}
             {section === 'appearance' && (
               <div className="glass rounded-2xl p-6">
                 <h2 className="text-base font-semibold text-white mb-6">Appearance</h2>
-
                 <div>
                   <p className="text-xs font-medium text-slate-400 mb-3">Theme</p>
                   <div className="grid grid-cols-3 gap-3">
@@ -224,11 +324,10 @@ export default function Settings() {
               </div>
             )}
 
-            {/* ── Security ────────────────────────────────────────── */}
+            {/* ── Security ─────────────────────────────────────────── */}
             {section === 'security' && (
               <div className="glass rounded-2xl p-6">
                 <h2 className="text-base font-semibold text-white mb-6">Change password</h2>
-
                 <form onSubmit={handleSavePassword} className="space-y-4">
                   <div>
                     <label htmlFor="currentPassword" className="block text-xs font-medium text-slate-400 mb-1.5">
@@ -243,7 +342,6 @@ export default function Settings() {
                       className={inputClass}
                     />
                   </div>
-
                   <div>
                     <label htmlFor="newPassword" className="block text-xs font-medium text-slate-400 mb-1.5">
                       New password
@@ -257,7 +355,6 @@ export default function Settings() {
                       className={inputClass}
                     />
                   </div>
-
                   <div>
                     <label htmlFor="confirmPassword" className="block text-xs font-medium text-slate-400 mb-1.5">
                       Confirm new password
@@ -271,9 +368,7 @@ export default function Settings() {
                       className={inputClass}
                     />
                   </div>
-
                   {passwordError && <p className="text-xs text-red-400">{passwordError}</p>}
-
                   <div className="flex items-center gap-3">
                     <Button type="submit" isLoading={passwordSaving} size="sm">
                       Update password
@@ -287,6 +382,7 @@ export default function Settings() {
                 </form>
               </div>
             )}
+
           </div>
         </div>
       </div>

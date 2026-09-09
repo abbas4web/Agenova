@@ -10,11 +10,13 @@ import { cn } from '../utils/cn';
 
 const SUGGESTED_PROMPTS = [
   { text: 'Plan a 7-day trip to Japan', agentId: 'travel' },
-  { text: 'Build a beginner workout plan', agentId: 'fitness' },
+  { text: 'Build me a beginner workout plan', agentId: 'fitness' },
   { text: 'Recommend a laptop under $1000', agentId: 'technology' },
-  { text: 'Help me write a better resume', agentId: 'career' },
-  { text: 'Best skincare routine for dry skin', agentId: 'skincare' },
+  { text: 'Help me rewrite my resume', agentId: 'career' },
+  { text: 'Best skincare routine for oily skin', agentId: 'skincare' },
   { text: 'Learn Python from scratch', agentId: 'education' },
+  { text: 'What are the best EVs in 2024?', agentId: 'automobile' },
+  { text: 'Give me a high-protein meal plan', agentId: 'food' },
 ];
 
 export default function Home() {

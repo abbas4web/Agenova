@@ -5,6 +5,7 @@ import type { AgentColor } from '../../types';
 import { cn } from '../../utils/cn';
 import { useAgentsStore } from '../../store/agentsStore';
 import { useChatStore } from '../../store/chatStore';
+import AgentIcon from '../common/AgentIcon';
 
 interface AgentCardProps {
   agent: Agent;
@@ -22,6 +23,8 @@ export default function AgentCard({ agent, size = 'md' }: AgentCardProps) {
     setActiveAgent(agent.id);
     navigate(`/agent/${agent.id}`);
   }
+
+  const iconSize = size === 'sm' ? 18 : size === 'md' ? 22 : 26;
 
   return (
     <button
@@ -41,13 +44,14 @@ export default function AgentCard({ agent, size = 'md' }: AgentCardProps) {
           className={cn(
             'rounded-xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110',
             colors.bgLight,
-            size === 'sm' && 'w-9 h-9 text-xl',
-            size === 'md' && 'w-11 h-11 text-2xl',
-            size === 'lg' && 'w-13 h-13 text-3xl'
+            colors.text,
+            size === 'sm' && 'w-9 h-9',
+            size === 'md' && 'w-11 h-11',
+            size === 'lg' && 'w-12 h-12'
           )}
           aria-hidden="true"
         >
-          {agent.icon}
+          <AgentIcon iconKey={agent.icon} size={iconSize} strokeWidth={1.75} />
         </div>
 
         {/* Text */}

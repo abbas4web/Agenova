@@ -1,9 +1,12 @@
-import { Menu, Settings, LogOut, ChevronDown } from 'lucide-react';
+import { Menu, LogOut, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { useAgentsStore } from '../../store/agentsStore';
 import Avatar from '../common/Avatar';
+import AgentIcon from '../common/AgentIcon';
+import { getAgentColors } from '../../utils/agentColors';
+import type { AgentColor } from '../../types';
 import { cn } from '../../utils/cn';
 
 interface TopBarProps {
@@ -19,7 +22,6 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
 
   const activeAgent = activeAgentId ? getAgent(activeAgentId) : null;
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -37,7 +39,7 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
 
   return (
     <header className="h-14 flex items-center justify-between px-4 border-b border-surface-800/60 bg-surface-950/80 backdrop-blur-sm flex-shrink-0">
-      {/* Left: hamburger + current agent */}
+      {/* Left: hamburger + active agent or brand */}
       <div className="flex items-center gap-3">
         <button
           onClick={onMenuClick}
@@ -50,10 +52,17 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
         <div className="flex items-center gap-2">
           {activeAgent ? (
             <>
-              <span className="text-xl leading-none" aria-hidden="true">
-                {activeAgent.icon}
-              </span>
-              <span className="font-semibold text-sm text-white hidden sm:block">
+              <div
+                className={cn(
+                  'w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0',
+                  getAgentColors(activeAgent.color as AgentColor).bgLight,
+                  getAgentColors(activeAgent.color as AgentColor).text
+                )}
+                aria-hidden="true"
+              >
+                <AgentIcon iconKey={activeAgent.icon} size={15} strokeWidth={1.75} />
+              </div>
+              <span className="font-semibold text-sm text-white">
                 {activeAgent.name}
               </span>
             </>
@@ -65,7 +74,7 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
         </div>
       </div>
 
-      {/* Right: user menu */}
+      {/* Right: user dropdown — only avatar + name + logout */}
       {user && (
         <div className="relative" ref={dropdownRef}>
           <button
@@ -89,21 +98,14 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
 
           {dropdownOpen && (
             <div className="absolute right-0 top-full mt-2 w-48 glass rounded-xl shadow-xl shadow-black/40 z-50 py-1 animate-fade-in">
-              <div className="px-3 py-2 border-b border-surface-700/60">
-                <p className="text-xs text-slate-400 truncate">{user.email}</p>
+              <div className="px-3 py-2.5 border-b border-surface-700/60">
+                <p className="text-sm font-medium text-white truncate">{user.displayName}</p>
+                <p className="text-xs text-slate-500 truncate mt-0.5">{user.email}</p>
               </div>
 
               <button
-                onClick={() => { navigate('/settings'); setDropdownOpen(false); }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-surface-700/50 transition-colors"
-              >
-                <Settings size={14} className="text-slate-500" />
-                Settings
-              </button>
-
-              <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
               >
                 <LogOut size={14} />
                 Sign out

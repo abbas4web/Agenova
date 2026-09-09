@@ -1,9 +1,10 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Components } from 'react-markdown';
+import { AlertCircle, UserRound, Bot } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import type { OptimisticMessage } from '../../types';
-import { AlertCircle } from 'lucide-react';
+import AgentIcon from '../common/AgentIcon';
 
 interface MessageBubbleProps {
   message: OptimisticMessage;
@@ -130,14 +131,20 @@ export default function MessageBubble({ message, agentIcon }: MessageBubbleProps
       {/* Avatar */}
       <div
         className={cn(
-          'w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-base leading-none select-none',
+          'w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 select-none',
           isUser
-            ? 'bg-brand-600/20 border border-brand-500/30 text-brand-400 text-xs font-semibold'
-            : 'bg-surface-800 border border-surface-700/60'
+            ? 'bg-brand-600/20 border border-brand-500/30 text-brand-400'
+            : 'bg-surface-800 border border-surface-700/60 text-slate-400'
         )}
         aria-hidden="true"
       >
-        {isUser ? 'You' : (agentIcon ?? '🤖')}
+        {isUser ? (
+          <UserRound size={15} strokeWidth={1.75} />
+        ) : agentIcon ? (
+          <AgentIcon iconKey={agentIcon} size={15} strokeWidth={1.75} />
+        ) : (
+          <Bot size={15} strokeWidth={1.75} />
+        )}
       </div>
 
       {/* Bubble */}

@@ -1,12 +1,15 @@
 import { useEffect } from 'react';
 import { NavLink, useNavigate, useParams } from 'react-router-dom';
-import { Plus, Sparkles, MessageSquare, Trash2, X } from 'lucide-react';
+import { Plus, Sparkles, MessageSquare, Trash2, X, Settings } from 'lucide-react';
+import { useAuthStore } from '../../store/authStore';
 import { useAgentsStore } from '../../store/agentsStore';
 import { useChatStore } from '../../store/chatStore';
 import { getAgentColors } from '../../utils/agentColors';
 import type { AgentColor } from '../../types';
 import { cn } from '../../utils/cn';
 import Spinner from '../common/Spinner';
+import AgentIcon from '../common/AgentIcon';
+import Avatar from '../common/Avatar';
 import { formatDistanceToNow } from 'date-fns';
 
 interface SidebarProps {
@@ -18,6 +21,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const { agents, isLoading: agentsLoading, fetchAgents, setActiveAgent } = useAgentsStore();
   const { conversations, fetchConversations, deleteConversation, startNewConversation } =
     useChatStore();
+  const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const { agentId } = useParams<{ agentId?: string }>();
 
@@ -112,9 +116,18 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                           : 'text-slate-400 hover:text-white hover:bg-surface-800/60'
                       )}
                     >
-                      <span className="text-lg leading-none flex-shrink-0" aria-hidden="true">
-                        {agent.icon}
-                      </span>
+                      {/* Agent icon */}
+                      <div
+                        className={cn(
+                          'w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0',
+                          isActive ? colors.bgLight : 'bg-surface-800/60',
+                          isActive ? colors.text : 'text-slate-500 group-hover:text-slate-300'
+                        )}
+                        aria-hidden="true"
+                      >
+                        <AgentIcon iconKey={agent.icon} size={14} strokeWidth={1.75} />
+                      </div>
+
                       <div className="flex-1 min-w-0">
                         <p
                           className={cn(
@@ -149,6 +162,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
               <nav aria-label="Recent conversations">
                 {conversations.slice(0, 20).map((conv) => {
                   const agent = agents.find((a) => a.id === conv.agentId);
+                  const colors = agent ? getAgentColors(agent.color as AgentColor) : null;
 
                   return (
                     <button
@@ -156,13 +170,28 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                       onClick={() => handleConversationClick(conv.agentId, conv.id)}
                       className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left group hover:bg-surface-800/60 transition-colors"
                     >
-                      <MessageSquare size={13} className="text-slate-600 flex-shrink-0 mt-0.5" />
+                      {/* Small agent icon instead of emoji */}
+                      <div
+                        className={cn(
+                          'w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0',
+                          colors?.bgLight ?? 'bg-surface-800',
+                          colors?.text ?? 'text-slate-500'
+                        )}
+                        aria-hidden="true"
+                      >
+                        {agent ? (
+                          <AgentIcon iconKey={agent.icon} size={11} strokeWidth={2} />
+                        ) : (
+                          <MessageSquare size={11} />
+                        )}
+                      </div>
+
                       <div className="flex-1 min-w-0">
                         <p className="text-xs text-slate-400 group-hover:text-slate-200 truncate transition-colors">
                           {conv.title}
                         </p>
                         <p className="text-[10px] text-slate-600 mt-0.5">
-                          {agent?.icon} {formatDistanceToNow(new Date(conv.updatedAt), { addSuffix: true })}
+                          {formatDistanceToNow(new Date(conv.updatedAt), { addSuffix: true })}
                         </p>
                       </div>
                       <button
@@ -180,11 +209,33 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           )}
         </div>
 
-        {/* Bottom: tagline */}
-        <div className="p-4 border-t border-surface-800/40 flex-shrink-0">
-          <p className="text-[10px] text-slate-600 text-center">
-            One Platform. Many AI Agents.
-          </p>
+        {/* Bottom: Settings + user info */}
+        <div className="border-t border-surface-800/40 flex-shrink-0">
+          {/* Settings link */}
+          <div className="p-3">
+            <button
+              onClick={() => { navigate('/settings'); onClose(); }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-slate-400 hover:text-white hover:bg-surface-800/60 transition-all group"
+            >
+              <div className="w-7 h-7 rounded-lg bg-surface-800/60 flex items-center justify-center flex-shrink-0 text-slate-500 group-hover:text-slate-300">
+                <Settings size={14} />
+              </div>
+              <span className="text-sm font-medium">Settings</span>
+            </button>
+          </div>
+
+          {/* User info */}
+          {user && (
+            <div className="px-4 pb-4 pt-1">
+              <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-surface-800/40 border border-surface-700/30">
+                <Avatar name={user.displayName} size="sm" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-white truncate">{user.displayName}</p>
+                  <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </aside>
     </>
