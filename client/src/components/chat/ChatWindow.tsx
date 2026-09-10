@@ -57,9 +57,24 @@ export default function ChatWindow({
       aria-live="polite"
     >
       <div className="max-w-3xl mx-auto pb-4">
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} agentIcon={agentIcon} />
-        ))}
+        {messages.map((message, index) => {
+          // When this is a pending assistant bubble, check if the previous
+          // user message had an image — if so, pass it for the scan animation
+          const prevMessage = index > 0 ? messages[index - 1] : undefined;
+          const pendingImageUrl =
+            message.pending && prevMessage?.imagePreviewUrl
+              ? prevMessage.imagePreviewUrl
+              : undefined;
+
+          return (
+            <MessageBubble
+              key={message.id}
+              message={message}
+              agentIcon={agentIcon}
+              pendingImageUrl={pendingImageUrl}
+            />
+          );
+        })}
         <div ref={bottomRef} aria-hidden="true" />
       </div>
     </div>
