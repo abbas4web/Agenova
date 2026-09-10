@@ -20,3 +20,4 @@ import './techInfo.tool';
 import './carInfo.tool';
 import './careerInfo.tool';
 import './educationInfo.tool';
+import './skincareProduct.tool';

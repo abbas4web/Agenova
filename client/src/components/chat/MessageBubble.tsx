@@ -5,6 +5,41 @@ import { AlertCircle, UserRound, Bot, Scan, Sparkles } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import type { OptimisticMessage } from '../../types';
 import AgentIcon from '../common/AgentIcon';
+import ProductCardList from './ProductCardList';
+import type { ProductCardData } from './ProductCard';
+
+// ── Product card block parser ─────────────────────────────────────────────────
+interface TextSegment  { type: 'text';  content: string }
+interface CardsSegment { type: 'cards'; products: ProductCardData[] }
+type MessageSegment = TextSegment | CardsSegment;
+
+function parseSegments(content: string): MessageSegment[] {
+  const segments: MessageSegment[] = [];
+  const regex = /```product-cards\n([\s\S]*?)\n```/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ type: 'text', content: content.slice(lastIndex, match.index) });
+    }
+    try {
+      const products = JSON.parse(match[1]) as ProductCardData[];
+      if (Array.isArray(products) && products.length > 0) {
+        segments.push({ type: 'cards', products });
+      }
+    } catch {
+      segments.push({ type: 'text', content: match[0] });
+    }
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < content.length) {
+    segments.push({ type: 'text', content: content.slice(lastIndex) });
+  }
+
+  return segments.length > 0 ? segments : [{ type: 'text', content }];
+}
 
 interface MessageBubbleProps {
   message: OptimisticMessage;
@@ -227,10 +262,18 @@ export default function MessageBubble({ message, agentIcon, pendingImageUrl }: M
             )}
           </div>
         ) : (
-          // Assistant messages — full Markdown rendering
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-            {message.content}
-          </ReactMarkdown>
+          // Assistant messages — parse product cards, render rest as Markdown
+          <div>
+            {parseSegments(message.content).map((seg, i) =>
+              seg.type === 'cards' ? (
+                <ProductCardList key={i} products={seg.products} />
+              ) : seg.content.trim() ? (
+                <ReactMarkdown key={i} remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {seg.content}
+                </ReactMarkdown>
+              ) : null
+            )}
+          </div>
         )}
       </div>
     </div>
