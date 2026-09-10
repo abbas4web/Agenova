@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Square } from 'lucide-react';
 import { cn } from '../../utils/cn';
+import ImageUploadButton, { type SelectedImage } from './ImageUploadButton';
 
 interface InputBarProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, imageBase64?: string, imageMimeType?: string) => void;
   isLoading: boolean;
   placeholder?: string;
   disabled?: boolean;
@@ -16,6 +17,7 @@ export default function InputBar({
   disabled,
 }: InputBarProps) {
   const [value, setValue] = useState('');
+  const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize textarea
@@ -35,9 +37,18 @@ export default function InputBar({
 
   function handleSubmit() {
     const trimmed = value.trim();
-    if (!trimmed || isLoading || disabled) return;
-    onSend(trimmed);
+    // Allow send if there is text OR an image attached
+    if ((!trimmed && !selectedImage) || isLoading || disabled) return;
+
+    onSend(trimmed, selectedImage?.base64, selectedImage?.mimeType);
     setValue('');
+
+    // Clean up the preview URL and clear the image
+    if (selectedImage?.previewUrl) {
+      URL.revokeObjectURL(selectedImage.previewUrl);
+    }
+    setSelectedImage(null);
+
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
@@ -50,7 +61,7 @@ export default function InputBar({
     }
   }
 
-  const canSend = value.trim().length > 0 && !isLoading && !disabled;
+  const canSend = (value.trim().length > 0 || selectedImage !== null) && !isLoading && !disabled;
 
   return (
     <div className="w-full border-t border-surface-800/60 bg-surface-950 flex-shrink-0">
@@ -62,12 +73,20 @@ export default function InputBar({
             'focus-within:border-brand-500/60 focus-within:bg-surface-800/80'
           )}
         >
+          {/* Image picker */}
+          <ImageUploadButton
+            selectedImage={selectedImage}
+            onImageSelected={setSelectedImage}
+            onImageRemoved={() => setSelectedImage(null)}
+            disabled={disabled || isLoading}
+          />
+
           <textarea
             ref={textareaRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={placeholder}
+            placeholder={selectedImage ? 'Add a message or send image…' : placeholder}
             disabled={disabled}
             rows={1}
             aria-label="Message input"

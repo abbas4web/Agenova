@@ -1,7 +1,7 @@
 import type { AgentRunInput, AgentRunOutput, ChatMessage } from '../types';
 import { AgentRegistry } from './AgentRegistry';
 import { ToolRegistry } from './ToolRegistry';
-import { getAIProvider } from './AIProvider';
+import { getProviderForAgent } from './AIProvider';
 import { logger } from '../config/logger';
 
 const DEFAULT_MAX_TURNS = 5;
@@ -9,38 +9,60 @@ const DEFAULT_MAX_TURNS = 5;
 /**
  * AgentRunner — the core execution loop.
  *
+ * Supports text-only and vision (image + text) turns.
+ * Vision agents (e.g. skincare/Derma) are routed to the vision-capable
+ * provider automatically via getProviderForAgent().
+ *
  * Flow:
- *   1. Load agent config from registry
- *   2. Build message array (system prompt + history + user message)
- *   3. Call the AI provider
- *   4. If the model wants to call a tool → execute it, append result, loop
- *   5. Return the final text response
+ *   1. Load agent config
+ *   2. Route to correct provider (vision vs default)
+ *   3. Build message array — attaches inline image on the user turn if present
+ *   4. Call provider in a loop until no tool calls or maxTurns reached
+ *   5. Return final text reply
  */
 export class AgentRunner {
   async run(input: AgentRunInput): Promise<AgentRunOutput> {
-    const { agentId, message, conversationHistory, userId } = input;
+    const { agentId, message, conversationHistory, userId, imageBase64, imageMimeType } = input;
 
     // ── 1. Load agent config ─────────────────────────────────────────────────
     const agent = AgentRegistry.get(agentId);
     const maxTurns = agent.maxTurns ?? DEFAULT_MAX_TURNS;
-    const provider = getAIProvider();
+
+    // ── 2. Route to the correct provider ─────────────────────────────────────
+    // Vision agents get the vision provider (Gemini direct or OpenRouter vision model)
+    const provider = getProviderForAgent(agentId);
 
     logger.info(
-      { agentId, userId, provider: provider.providerName, model: provider.modelName },
+      {
+        agentId,
+        userId,
+        provider: provider.providerName,
+        model: provider.modelName,
+        hasImage: !!imageBase64,
+      },
       'AgentRunner: starting run'
     );
 
-    // ── 2. Build initial message array ───────────────────────────────────────
+    // ── 3. Build initial message array ───────────────────────────────────────
+    const effectiveMessage = message || (imageBase64 ? 'Please analyse this image.' : '');
+
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: effectiveMessage,
+      // Attach image data to the user turn if provided
+      ...(imageBase64 && imageMimeType ? { imageBase64, imageMimeType } : {}),
+    };
+
     const messages: ChatMessage[] = [
       { role: 'system', content: agent.systemPrompt },
       ...conversationHistory,
-      { role: 'user', content: message },
+      userMessage,
     ];
 
-    // ── 3. Get tool definitions the agent is allowed to use ──────────────────
+    // ── 4. Tool definitions ──────────────────────────────────────────────────
     const toolDefinitions = ToolRegistry.getDefinitions(agent.allowedTools);
 
-    // ── 4. Tool-call loop ────────────────────────────────────────────────────
+    // ── 5. Tool-call loop ────────────────────────────────────────────────────
     let turns = 0;
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
@@ -53,7 +75,7 @@ export class AgentRunner {
       totalPromptTokens += aiResponse.usage.promptTokens;
       totalCompletionTokens += aiResponse.usage.completionTokens;
 
-      // ── No tool calls → we have the final answer ─────────────────────────
+      // ── No tool calls → final answer ──────────────────────────────────────
       if (aiResponse.toolCalls.length === 0) {
         const reply = aiResponse.content ?? "I'm sorry, I couldn't generate a response.";
 
@@ -70,53 +92,32 @@ export class AgentRunner {
         return {
           reply,
           agentId,
-          usage: {
-            promptTokens: totalPromptTokens,
-            completionTokens: totalCompletionTokens,
-          },
+          usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
         };
       }
 
-      // ── There are tool calls — if the model also returned text, keep it ───
+      // ── Execute tool calls ────────────────────────────────────────────────
       if (aiResponse.content) {
         messages.push({ role: 'assistant', content: aiResponse.content });
       }
 
-      // ── Execute each tool call and append results ─────────────────────────
       for (const toolCall of aiResponse.toolCalls) {
         logger.debug({ toolName: toolCall.name, args: toolCall.args }, 'AgentRunner: tool call');
-
         const toolResult = await ToolRegistry.execute(toolCall.name, toolCall.args);
-
-        // Append the assistant's tool call intent as an assistant message
-        messages.push({
-          role: 'assistant',
-          content: `Calling tool: ${toolCall.name}`,
-        });
-
-        // Append the tool result
-        messages.push({
-          role: 'tool',
-          content: toolResult,
-          toolName: toolCall.name,
-        });
+        messages.push({ role: 'assistant', content: `Calling tool: ${toolCall.name}` });
+        messages.push({ role: 'tool', content: toolResult, toolName: toolCall.name });
       }
     }
 
-    // ── 5. Safety: max turns reached ────────────────────────────────────────
+    // ── 6. Max turns reached ─────────────────────────────────────────────────
     logger.warn({ agentId, maxTurns }, 'AgentRunner: max turns reached');
 
     return {
-      reply:
-        "I've reached the limit of my reasoning steps for this request. Please try rephrasing or breaking it into smaller questions.",
+      reply: "I've reached the limit of my reasoning steps. Please try rephrasing or breaking it into smaller questions.",
       agentId,
-      usage: {
-        promptTokens: totalPromptTokens,
-        completionTokens: totalCompletionTokens,
-      },
+      usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
     };
   }
 }
 
-// Export a singleton instance
 export const agentRunner = new AgentRunner();

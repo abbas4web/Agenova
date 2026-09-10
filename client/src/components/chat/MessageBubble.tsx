@@ -166,8 +166,19 @@ export default function MessageBubble({ message, agentIcon }: MessageBubbleProps
             <span>{message.content}</span>
           </div>
         ) : isUser ? (
-          // User messages — plain text, preserve newlines
-          <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+          // User messages — text + optional image preview
+          <div className="space-y-2">
+            {message.imagePreviewUrl && (
+              <img
+                src={message.imagePreviewUrl}
+                alt="Attached image"
+                className="max-w-[220px] max-h-[220px] rounded-xl object-cover border border-brand-500/20"
+              />
+            )}
+            {message.content && (
+              <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+            )}
+          </div>
         ) : (
           // Assistant messages — full Markdown rendering
           <ReactMarkdown

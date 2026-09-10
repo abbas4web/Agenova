@@ -69,7 +69,7 @@ export class GroqProvider implements AIProvider {
     try {
       const completion = await this.client.chat.completions.create({
         model: this.modelName,
-        messages: groqMessages,
+        messages: groqMessages as Parameters<typeof this.client.chat.completions.create>[0]['messages'],
         ...(groqTools ? { tools: groqTools, tool_choice: 'auto' } : {}),
       });
 

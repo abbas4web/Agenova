@@ -49,10 +49,17 @@ export interface MessageRow {
 
 export type MessageRole = 'user' | 'assistant' | 'tool' | 'system';
 
+/** Supported MIME types for image uploads */
+export type ImageMimeType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+
 export interface ChatMessage {
   role: MessageRole;
   content: string;
   toolName?: string;
+  /** Base64-encoded image data (no data: prefix) — only on user messages */
+  imageBase64?: string;
+  /** MIME type of the image, e.g. "image/jpeg" */
+  imageMimeType?: ImageMimeType;
 }
 
 export interface MessageMetadata {
@@ -103,11 +110,11 @@ export interface AgentConfig {
   name: string;
   description: string;
   icon: string;
-  color: string;                // Tailwind color class used in the UI
+  color: string;           // Tailwind color class used in the UI
   systemPrompt: string;
   allowedTools: string[];
-  model?: string;               // Override default model
-  maxTurns?: number;            // Max tool-call loop iterations (default 5)
+  model?: string;          // Override default model
+  maxTurns?: number;       // Max tool-call loop iterations (default 5)
 }
 
 export interface AgentRunInput {
@@ -115,6 +122,10 @@ export interface AgentRunInput {
   message: string;
   conversationHistory: ChatMessage[];
   userId: string;
+  /** Base64-encoded image data (no data: prefix) — optional vision input */
+  imageBase64?: string;
+  /** MIME type of the attached image */
+  imageMimeType?: ImageMimeType;
 }
 
 export interface AgentRunOutput {
@@ -136,9 +147,13 @@ export interface ToolImplementation {
 // ── API request / response shapes ────────────────────────────────────────────
 
 export interface ChatRequest {
-  message: string;
+  message?: string;
   conversationId?: string;
-  agentId?: string;             // Optional — Orchestrator picks one if omitted
+  agentId?: string;
+  /** Base64-encoded image data (no data: prefix) */
+  imageBase64?: string;
+  /** MIME type of the attached image */
+  imageMimeType?: ImageMimeType;
 }
 
 export interface ChatResponse {

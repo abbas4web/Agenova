@@ -23,7 +23,10 @@ interface ChatState {
   sendMessage: (
     message: string,
     agentId: string,
-    conversationId?: string
+    conversationId?: string,
+    imageBase64?: string,
+    imageMimeType?: string,
+    imagePreviewUrl?: string,
   ) => Promise<{ conversationId: string; agentId: string }>;
   startNewConversation: () => void;
   deleteConversation: (conversationId: string) => Promise<void>;
@@ -68,17 +71,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  sendMessage: async (message, agentId, conversationId) => {
+  sendMessage: async (message, agentId, conversationId, imageBase64, imageMimeType, imagePreviewUrl) => {
     const userMsgId = uuidv4();
     const thinkingMsgId = uuidv4();
 
-    // ── 1. Optimistic update: add user message + thinking indicator ───────────
+    // ── 1. Optimistic update ─────────────────────────────────────────────────
+    const userOptimistic: OptimisticMessage = {
+      id: userMsgId,
+      role: 'user',
+      content: message,
+      // Attach preview URL so MessageBubble can show the image inline
+      ...(imagePreviewUrl ? { imagePreviewUrl } : {}),
+    };
+
     set((state) => ({
       isSending: true,
       sendError: null,
       messages: [
         ...state.messages,
-        { id: userMsgId, role: 'user', content: message },
+        userOptimistic,
         { id: thinkingMsgId, role: 'assistant', content: '', pending: true },
       ],
     }));
@@ -88,6 +99,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         message,
         agentId,
         conversationId: conversationId ?? get().activeConversationId ?? undefined,
+        imageBase64,
+        imageMimeType,
       });
 
       // ── 2. Replace thinking indicator with real response ──────────────────
@@ -101,14 +114,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ),
       }));
 
-      // ── 3. Refresh conversation list to show updated title / timestamp ────
       get().fetchConversations(agentId);
 
       return { conversationId: response.conversationId, agentId: response.agentId };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to send message.';
 
-      // Replace thinking indicator with error state
       set((state) => ({
         isSending: false,
         sendError: errorMessage,

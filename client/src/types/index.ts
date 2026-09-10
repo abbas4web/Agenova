@@ -63,6 +63,8 @@ export interface OptimisticMessage {
   content: string;
   pending?: boolean;
   error?: boolean;
+  /** data: URL for showing an image preview inside the user bubble */
+  imagePreviewUrl?: string;
 }
 
 export interface Conversation {
@@ -76,9 +78,13 @@ export interface Conversation {
 // ── API request/response shapes ───────────────────────────────────────────────
 
 export interface ChatRequest {
-  message: string;
+  message?: string;
   conversationId?: string;
   agentId?: string;
+  /** Base64-encoded image data (no data: prefix) */
+  imageBase64?: string;
+  /** MIME type of the attached image, e.g. "image/jpeg" */
+  imageMimeType?: string;
 }
 
 export interface ChatResponse {

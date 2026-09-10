@@ -66,12 +66,12 @@ export class OpenRouterProvider implements AIProvider {
   private apiKey: string;
   private supportsTools: boolean;
 
-  constructor() {
+  constructor(modelOverride?: string) {
     if (!env.openRouter.apiKey) {
       throw new Error('OPENROUTER_API_KEY is not set in environment variables.');
     }
     this.apiKey = env.openRouter.apiKey;
-    this.modelName = env.openRouter.model;
+    this.modelName = modelOverride ?? env.openRouter.model;
     this.supportsTools = !NO_TOOL_MODELS.includes(this.modelName);
 
     if (!this.supportsTools) {
@@ -126,7 +126,7 @@ export class OpenRouterProvider implements AIProvider {
 
       if (!response.ok) {
         const errorText = await response.text();
-        const errorData = this.tryParseJson(errorText);
+        const errorData = this.tryParseJson(errorText) as { error?: { message?: string }; message?: string } | null;
 
         // Rate limit
         if (response.status === 429) {

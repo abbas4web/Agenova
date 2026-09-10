@@ -12,21 +12,34 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
   JWT_EXPIRES_IN: z.string().default('7d'),
 
-  // Supported providers: gemini | groq | openrouter
+  // ── Main AI provider ────────────────────────────────────────────────────────
+  // Supported: gemini | groq | openrouter
   AI_PROVIDER: z.enum(['gemini', 'groq', 'openrouter']).default('openrouter'),
 
-  // Gemini
-  GEMINI_API_KEY: z.string().optional(),
-  GEMINI_MODEL: z.string().default('gemini-1.5-flash'),
+  // ── Vision provider (used by agents in VISION_AGENT_IDS) ───────────────────
+  // Supported: gemini | openrouter
+  VISION_PROVIDER: z.enum(['gemini', 'openrouter']).default('gemini'),
+  // Comma-separated agent IDs that receive the vision provider (e.g. "skincare")
+  VISION_AGENT_IDS: z.string().default('skincare'),
 
-  // Groq
+  // ── Gemini (Google AI Studio) ───────────────────────────────────────────────
+  GEMINI_API_KEY: z.string().optional(),
+  // Main Gemini model (text)
+  GEMINI_MODEL: z.string().default('gemini-3.5-flash'),
+  // Vision-specific Gemini model — used by vision agents
+  VISION_GEMINI_MODEL: z.string().default('gemini-3.5-flash'),
+
+  // ── Groq ────────────────────────────────────────────────────────────────────
   GROQ_API_KEY: z.string().optional(),
   GROQ_MODEL: z.string().default('openai/gpt-oss-20b'),
 
-  // OpenRouter
+  // ── OpenRouter ──────────────────────────────────────────────────────────────
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_MODEL: z.string().default('meta-llama/llama-3.3-70b-instruct:free'),
+  // Vision model used when VISION_PROVIDER=openrouter
+  OPENROUTER_VISION_MODEL: z.string().default('nex-agi/nex-n2.5-pro:free'),
 
+  // ── Rate limiting ────────────────────────────────────────────────────────────
   RATE_LIMIT_WINDOW_MS: z.string().default('60000'),
   RATE_LIMIT_MAX_REQUESTS: z.string().default('60'),
 });
@@ -53,6 +66,12 @@ export const env = {
 
   aiProvider: parsed.data.AI_PROVIDER,
 
+  vision: {
+    provider: parsed.data.VISION_PROVIDER,
+    agentIds: parsed.data.VISION_AGENT_IDS.split(',').map((s) => s.trim()).filter(Boolean),
+    geminiModel: parsed.data.VISION_GEMINI_MODEL,
+  },
+
   gemini: {
     apiKey: parsed.data.GEMINI_API_KEY ?? '',
     model: parsed.data.GEMINI_MODEL,
@@ -66,6 +85,7 @@ export const env = {
   openRouter: {
     apiKey: parsed.data.OPENROUTER_API_KEY ?? '',
     model: parsed.data.OPENROUTER_MODEL,
+    visionModel: parsed.data.OPENROUTER_VISION_MODEL,
   },
 
   rateLimit: {

@@ -4,26 +4,46 @@ import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 
 /**
- * GeminiProvider — supports two key formats:
+ * GeminiProvider — Direct Google Gemini REST API.
  *
- *   1. AIzaSy... keys  → Standard Gemini REST API (Google AI Studio)
- *      Get at: https://aistudio.google.com/app/apikey
+ * Endpoint: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+ * Auth:     x-goog-api-key header
  *
- *   2. AQ.... keys     → These are Vertex AI OAuth tokens and are NOT
- *      supported by this provider. Use OpenRouter with model
- *      "google/gemini-flash-1.5" or "google/gemini-pro-1.5" instead.
- *
- * Uses the Gemini REST API directly (no SDK dependency on @google/generative-ai)
- * to avoid SDK version mismatches.
+ * Supports:
+ *   - Text-only conversations
+ *   - Multimodal (text + image) via inline_data parts
+ *   - Function / tool calling
  */
 
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const FETCH_TIMEOUT_MS = 30_000;
 
-interface GeminiPart {
-  text?: string;
-  functionCall?: { name: string; args: Record<string, unknown> };
-  functionResponse?: { name: string; response: Record<string, unknown> };
+// ── Gemini REST API types ─────────────────────────────────────────────────────
+
+interface GeminiTextPart {
+  text: string;
 }
+
+interface GeminiInlineDataPart {
+  inline_data: {
+    mime_type: string;
+    data: string; // base64-encoded, no data: prefix
+  };
+}
+
+interface GeminiFunctionCallPart {
+  functionCall: { name: string; args: Record<string, unknown> };
+}
+
+interface GeminiFunctionResponsePart {
+  functionResponse: { name: string; response: Record<string, unknown> };
+}
+
+type GeminiPart =
+  | GeminiTextPart
+  | GeminiInlineDataPart
+  | GeminiFunctionCallPart
+  | GeminiFunctionResponsePart;
 
 interface GeminiContent {
   role: 'user' | 'model';
@@ -42,7 +62,10 @@ interface GeminiResponse {
   candidates?: Array<{
     content: {
       role: string;
-      parts: GeminiPart[];
+      parts: Array<{
+        text?: string;
+        functionCall?: { name: string; args: Record<string, unknown> };
+      }>;
     };
     finishReason?: string;
   }>;
@@ -57,45 +80,65 @@ interface GeminiResponse {
   };
 }
 
+// ── Provider ──────────────────────────────────────────────────────────────────
+
 export class GeminiProvider implements AIProvider {
   readonly providerName = 'gemini';
   readonly modelName: string;
+  readonly supportsTools = true;
+  readonly supportsVision = true;
 
-  private apiKey: string;
+  private readonly apiKey: string;
 
-  constructor() {
+  constructor(modelOverride?: string) {
     const key = env.gemini.apiKey;
-
     if (!key) {
       throw new Error(
-        'GEMINI_API_KEY is not set. Get an AIzaSy... key from https://aistudio.google.com/app/apikey'
+        'GEMINI_API_KEY is not set. Get a key from https://aistudio.google.com/app/apikey'
       );
     }
-
-    // Warn about AQ. keys — they won't work with the REST API
-    if (key.startsWith('AQ.')) {
-      throw new Error(
-        'Your GEMINI_API_KEY starts with "AQ." which is a Vertex AI OAuth token, not a Gemini API key.\n' +
-        'Please either:\n' +
-        '  1. Get an AIzaSy... key from https://aistudio.google.com/app/apikey\n' +
-        '  2. Switch to OpenRouter (AI_PROVIDER=openrouter) and use model "google/gemini-flash-1.5"'
-      );
-    }
-
     this.apiKey = key;
-    this.modelName = env.gemini.model;
+    this.modelName = modelOverride ?? env.gemini.model;
   }
 
   async chat(messages: ChatMessage[], tools?: ToolDefinition[]): Promise<AIResponse> {
-    // Separate system prompt from conversation
     const systemMessage = messages.find((m) => m.role === 'system');
-    const conversationMessages = messages.filter((m) => m.role !== 'system' && m.role !== 'tool');
+    const conversationMessages = messages.filter(
+      (m) => m.role !== 'system' && m.role !== 'tool'
+    );
 
-    // Build Gemini content array
-    const contents: GeminiContent[] = conversationMessages.map((m) => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }));
+    // Build Gemini contents array — supports text + inline image parts
+    const contents: GeminiContent[] = conversationMessages.map((m) => {
+      const parts: GeminiPart[] = [];
+
+      // Inline image part (vision) — placed before text so model sees context first
+      if (m.imageBase64 && m.imageMimeType) {
+        if (!m.imageBase64.trim()) {
+          throw new Error('Image data is empty. Please re-upload the image.');
+        }
+        parts.push({
+          inline_data: {
+            mime_type: m.imageMimeType,
+            data: m.imageBase64,
+          },
+        });
+      }
+
+      // Text part
+      if (m.content) {
+        parts.push({ text: m.content });
+      }
+
+      // Fallback: if somehow no parts, add a placeholder so Gemini doesn't error
+      if (parts.length === 0) {
+        parts.push({ text: '' });
+      }
+
+      return {
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts,
+      };
+    });
 
     const geminiTools: GeminiTool[] | undefined =
       tools && tools.length > 0
@@ -118,24 +161,36 @@ export class GeminiProvider implements AIProvider {
       ...(geminiTools ? { tools: geminiTools } : {}),
     };
 
-    const url = `${GEMINI_BASE_URL}/${this.modelName}:generateContent?key=${this.apiKey}`;
+    const url = `${GEMINI_BASE_URL}/${this.modelName}:generateContent`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': this.apiKey,
+        },
         body: JSON.stringify(requestBody),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       const data = (await response.json()) as GeminiResponse;
 
       if (!response.ok || data.error) {
         const msg = data.error?.message ?? `Gemini API error ${response.status}`;
 
+        if (response.status === 400) {
+          throw new Error(`Gemini request invalid: ${msg}`);
+        }
         if (response.status === 401 || response.status === 403) {
+          // Never expose the key value — log internally only
+          logger.error({ status: response.status }, 'Gemini authentication failed');
           throw new Error(
-            `Gemini authentication failed. Make sure your GEMINI_API_KEY starts with "AIzaSy". ` +
-            `Current key format may be invalid. Error: ${msg}`
+            'Gemini authentication failed. Check that GEMINI_API_KEY is correct.'
           );
         }
         if (response.status === 429) {
@@ -144,13 +199,18 @@ export class GeminiProvider implements AIProvider {
             { code: 'RATE_LIMIT' }
           );
         }
-
+        if (response.status === 503 || response.status === 504) {
+          throw Object.assign(
+            new Error('Gemini is temporarily unavailable. Please try again in a moment.'),
+            { code: 'PROVIDER_UNAVAILABLE' }
+          );
+        }
         throw new Error(msg);
       }
 
       const candidate = data.candidates?.[0];
       if (!candidate) {
-        throw new Error('Gemini returned no candidates.');
+        throw new Error('Gemini returned no candidates. The model may have filtered the response.');
       }
 
       const toolCalls: ToolCall[] = [];
@@ -177,10 +237,19 @@ export class GeminiProvider implements AIProvider {
         },
       };
     } catch (err) {
+      clearTimeout(timeoutId);
       const error = err as Error & { code?: string };
-      if (error.code === 'RATE_LIMIT') throw err;
 
-      logger.error({ err, provider: this.providerName }, 'Gemini API call failed');
+      if (error.name === 'AbortError') {
+        throw Object.assign(
+          new Error('Gemini took too long to respond. Please try again.'),
+          { code: 'PROVIDER_UNAVAILABLE' }
+        );
+      }
+
+      if (error.code === 'RATE_LIMIT' || error.code === 'PROVIDER_UNAVAILABLE') throw err;
+
+      logger.error({ err, provider: this.providerName, model: this.modelName }, 'Gemini API call failed');
       throw err;
     }
   }
