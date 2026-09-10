@@ -49,23 +49,9 @@ export default function AgentChat() {
   }, [conversationId, loadConversation, startNewConversation]);
 
   const handleSend = useCallback(
-    async (message: string, imageBase64?: string, imageMimeType?: string) => {
+    async (message: string, imageBase64?: string, imageMimeType?: string, imagePreviewUrl?: string) => {
       if (!agentId) return;
       try {
-        // Build a temporary object URL for the optimistic preview if an image is attached
-        // The base64 → Blob conversion is only for the preview; the base64 string is what gets sent
-        let imagePreviewUrl: string | undefined;
-        if (imageBase64 && imageMimeType) {
-          try {
-            const bytes = atob(imageBase64);
-            const arr = new Uint8Array(bytes.length);
-            for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-            imagePreviewUrl = URL.createObjectURL(new Blob([arr], { type: imageMimeType }));
-          } catch {
-            // Preview is best-effort — don't block the send
-          }
-        }
-
         const result = await sendMessage(message, agentId, conversationId, imageBase64, imageMimeType, imagePreviewUrl);
         if (!conversationId && result.conversationId) {
           navigate(

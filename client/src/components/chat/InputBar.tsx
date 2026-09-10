@@ -4,7 +4,7 @@ import { cn } from '../../utils/cn';
 import ImageUploadButton, { type SelectedImage } from './ImageUploadButton';
 
 interface InputBarProps {
-  onSend: (message: string, imageBase64?: string, imageMimeType?: string) => void;
+  onSend: (message: string, imageBase64?: string, imageMimeType?: string, imagePreviewUrl?: string) => void;
   isLoading: boolean;
   placeholder?: string;
   disabled?: boolean;
@@ -37,16 +37,16 @@ export default function InputBar({
 
   function handleSubmit() {
     const trimmed = value.trim();
-    // Allow send if there is text OR an image attached
     if ((!trimmed && !selectedImage) || isLoading || disabled) return;
 
-    onSend(trimmed, selectedImage?.base64, selectedImage?.mimeType);
-    setValue('');
+    // Pass the previewUrl to the parent — do NOT revoke it here.
+    // The store attaches it to the optimistic message so it stays visible.
+    // The URL will be revoked when the user explicitly removes the image
+    // (handled inside ImageUploadButton) or when the browser GCs the blob.
+    onSend(trimmed, selectedImage?.base64, selectedImage?.mimeType, selectedImage?.previewUrl);
 
-    // Clean up the preview URL and clear the image
-    if (selectedImage?.previewUrl) {
-      URL.revokeObjectURL(selectedImage.previewUrl);
-    }
+    setValue('');
+    // Just clear the selection — don't revoke the URL (it's now owned by the message store)
     setSelectedImage(null);
 
     if (textareaRef.current) {
