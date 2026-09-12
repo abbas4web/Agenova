@@ -18,7 +18,7 @@ const envSchema = z.object({
 
   // ── Vision provider (used by agents in VISION_AGENT_IDS) ───────────────────
   // Supported: gemini | openrouter
-  VISION_PROVIDER: z.enum(['gemini', 'openrouter']).default('gemini'),
+  VISION_PROVIDER: z.enum(['gemini', 'openrouter', 'groq']).default('groq'),
   // Comma-separated agent IDs that receive the vision provider (e.g. "skincare")
   VISION_AGENT_IDS: z.string().default('skincare'),
 
@@ -31,7 +31,11 @@ const envSchema = z.object({
 
   // ── Groq ────────────────────────────────────────────────────────────────────
   GROQ_API_KEY: z.string().optional(),
-  GROQ_MODEL: z.string().default('openai/gpt-oss-20b'),
+  GROQ_MODEL: z.string().default('openai/gpt-oss-120b'),
+  // Vision model — must support image input. Currently supported Groq vision models:
+  //   qwen/qwen3.6-27b  (131k ctx, up to 5 images, tools supported)
+  //   qwen/qwen3.8-27b  (131k ctx, up to 3 images, tools supported)
+  GROQ_VISION_MODEL: z.string().default('qwen/qwen3.6-27b'),
 
   // ── OpenRouter ──────────────────────────────────────────────────────────────
   OPENROUTER_API_KEY: z.string().optional(),
@@ -80,6 +84,7 @@ export const env = {
   groq: {
     apiKey: parsed.data.GROQ_API_KEY ?? '',
     model: parsed.data.GROQ_MODEL,
+    visionModel: parsed.data.GROQ_VISION_MODEL,
   },
 
   openRouter: {

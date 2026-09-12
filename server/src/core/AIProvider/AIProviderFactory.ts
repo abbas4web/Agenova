@@ -1,6 +1,7 @@
 import type { AIProvider } from './AIProvider.interface';
 import { GeminiProvider } from './GeminiProvider';
 import { GroqProvider } from './GroqProvider';
+import { GroqVisionProvider } from './GroqVisionProvider';
 import { OpenRouterProvider } from './OpenRouterProvider';
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
@@ -86,11 +87,12 @@ function createProvider(type: string): AIProvider {
 
 function createVisionProvider(type: string): AIProvider {
   switch (type) {
+    case 'groq':
+      return new GroqVisionProvider(env.groq.visionModel);
     case 'openrouter':
       return new OpenRouterProvider(env.openRouter.visionModel);
     case 'gemini':
     default:
-      // Use the dedicated vision model from VISION_GEMINI_MODEL
       return new GeminiProvider(env.vision.geminiModel);
   }
 }
