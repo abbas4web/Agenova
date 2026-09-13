@@ -1,4 +1,4 @@
-import type { AgentRunInput, AgentRunOutput, ChatMessage } from '../types';
+import type { AgentRunInput, AgentRunOutput, ChatMessage, ToolCall } from '../types';
 import { AgentRegistry } from './AgentRegistry';
 import { ToolRegistry } from './ToolRegistry';
 import { getProviderForAgent } from './AIProvider';
@@ -97,15 +97,24 @@ export class AgentRunner {
       }
 
       // ── Execute tool calls ────────────────────────────────────────────────
-      if (aiResponse.content) {
-        messages.push({ role: 'assistant', content: aiResponse.content });
-      }
+      // Push the assistant's tool-call message with the tool_calls array
+      // (required by Qwen/OpenAI protocol so the model can match results back)
+      messages.push({
+        role: 'assistant',
+        content: aiResponse.content ?? '',
+        // Store serialised tool calls so vision provider can reconstruct tool_calls array
+        toolCalls: aiResponse.toolCalls,
+      } as ChatMessage & { toolCalls: typeof aiResponse.toolCalls });
 
       for (const toolCall of aiResponse.toolCalls) {
         logger.debug({ toolName: toolCall.name, args: toolCall.args }, 'AgentRunner: tool call');
         const toolResult = await ToolRegistry.execute(toolCall.name, toolCall.args);
-        messages.push({ role: 'assistant', content: `Calling tool: ${toolCall.name}` });
-        messages.push({ role: 'tool', content: toolResult, toolName: toolCall.name });
+        // toolName is used as the tool_call_id so the provider can match result → call
+        messages.push({
+          role: 'tool',
+          content: toolResult,
+          toolName: (toolCall as ToolCall & { id?: string }).id ?? toolCall.name,
+        });
       }
     }
 

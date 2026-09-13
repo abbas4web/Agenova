@@ -43,7 +43,10 @@ const envSchema = z.object({
   // Vision model used when VISION_PROVIDER=openrouter
   OPENROUTER_VISION_MODEL: z.string().default('nex-agi/nex-n2.5-pro:free'),
 
-  // ── Rate limiting ────────────────────────────────────────────────────────────
+  // ── Tavily (product enrichment for Derma) ───────────────────────────────────
+  // Get a free key at https://tavily.com — used to fetch product images + buy links
+  // Set to empty string to disable product enrichment
+  TAVILY_API_KEY: z.string().default(''),
   RATE_LIMIT_WINDOW_MS: z.string().default('60000'),
   RATE_LIMIT_MAX_REQUESTS: z.string().default('60'),
 });
@@ -96,5 +99,9 @@ export const env = {
   rateLimit: {
     windowMs: parseInt(parsed.data.RATE_LIMIT_WINDOW_MS, 10),
     maxRequests: parseInt(parsed.data.RATE_LIMIT_MAX_REQUESTS, 10),
+  },
+
+  tavily: {
+    apiKey: parsed.data.TAVILY_API_KEY,
   },
 };

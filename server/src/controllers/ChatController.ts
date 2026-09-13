@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { orchestrator } from '../core/Orchestrator';
 import { agentRunner } from '../core/AgentRunner';
 import { conversationService } from '../services/ConversationService';
+import { productEnricher } from '../services/ProductEnricher';
 import type { ChatRequest, ImageMimeType } from '../types';
 import { logger } from '../config/logger';
 
@@ -94,12 +95,15 @@ export class ChatController {
         imageMimeType: imageMimeType as ImageMimeType | undefined,
       });
 
+      // ── 4b. Enrich reply with product cards (skincare agent only) ──────────
+      const enrichedReply = await productEnricher.enrich(result.reply, resolvedAgentId);
+
       // ── 5. Persist turn ────────────────────────────────────────────────────
       const latencyMs = Date.now() - start;
       const { assistantMessageId } = await conversationService.saveTurn({
         conversationId: conversation.id,
         userMessage: effectiveMessage || '[image]',
-        assistantReply: result.reply,
+        assistantReply: enrichedReply,
         agentId: resolvedAgentId,
         metadata: {
           promptTokens: result.usage.promptTokens,
@@ -120,7 +124,7 @@ export class ChatController {
       );
 
       res.json({
-        reply: result.reply,
+        reply: enrichedReply,
         agentId: resolvedAgentId,
         conversationId: conversation.id,
         messageId: assistantMessageId,

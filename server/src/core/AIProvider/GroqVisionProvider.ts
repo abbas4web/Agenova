@@ -6,49 +6,74 @@ import { logger } from '../../config/logger';
 /**
  * GroqVisionProvider — Groq REST API with multimodal (image + text) support.
  *
- * Uses the OpenAI-compatible /v1/chat/completions endpoint.
- * Images are sent as data: URLs inside image_url content parts.
+ * Strategy: two-pass approach
+ *   Pass 1 (vision turn):  image + text → model analyses the image, may request tool calls
+ *   Pass 2 (tool turns):   text only, tool results included → model formats final response
  *
- * Currently supported Groq vision models:
- *   qwen/qwen3.6-27b  — 131k context, tools supported, up to 5 images/request
- *   qwen/qwen3.8-27b  — 131k context, tools supported, up to 3 images/request
+ * This works around Qwen's limitation where image + tool_result messages in the
+ * same context cause the model to ignore tool calls and hallucinate output formats.
  *
- * Configure via VISION_GROQ_MODEL in .env.
+ * Supported Groq vision models:
+ *   qwen/qwen3.6-27b  — 131k ctx, up to 5 images, tools supported
+ *   qwen/qwen3.8-27b  — 131k ctx, up to 3 images, tools supported
  */
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const FETCH_TIMEOUT_MS = 90_000; // 90s — large images take time
+const FETCH_TIMEOUT_MS = 90_000;
 
-// ── Request / response types ──────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type ContentPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string } };
 
-interface GroqMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
+interface GroqTextMessage {
+  role: 'system' | 'user' | 'assistant';
   content: string | ContentPart[];
   name?: string;
+  tool_calls?: GroqToolCallRequest[];
 }
 
-interface GroqToolCall {
+interface GroqToolResultMessage {
+  role: 'tool';
+  content: string;
+  tool_call_id: string;
+}
+
+type GroqMessage = GroqTextMessage | GroqToolResultMessage;
+
+interface GroqToolCallRequest {
   id: string;
   type: 'function';
   function: { name: string; arguments: string };
 }
 
 interface GroqResponse {
-  id: string;
   choices: Array<{
     message: {
       role: string;
       content: string | null;
-      tool_calls?: GroqToolCall[];
+      tool_calls?: GroqToolCallRequest[];
     };
     finish_reason: string;
   }>;
   usage?: { prompt_tokens: number; completion_tokens: number };
   error?: { message: string; code?: string | number };
+}
+
+// ── Helper: strip Qwen thinking tags ─────────────────────────────────────────
+function stripThinking(text: string | null): string | null {
+  if (!text) return null;
+  const stripped = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  return stripped || text;
+}
+
+// ── Helper: build tool schema array ──────────────────────────────────────────
+function buildToolSchemas(tools: ToolDefinition[]) {
+  return tools.map((t) => ({
+    type: 'function' as const,
+    function: { name: t.name, description: t.description, parameters: t.parameters },
+  }));
 }
 
 // ── Provider ──────────────────────────────────────────────────────────────────
@@ -69,54 +94,90 @@ export class GroqVisionProvider implements AIProvider {
     this.modelName = modelOverride ?? env.groq.visionModel;
   }
 
+  // ── Main entry point ────────────────────────────────────────────────────────
+
   async chat(messages: ChatMessage[], tools?: ToolDefinition[]): Promise<AIResponse> {
-    // Build OpenAI-compatible message array with vision content parts
-    const groqMessages: GroqMessage[] = messages
-      .filter((m) => m.role !== 'tool') // Qwen vision supports tools but not tool-result messages via this path
-      .map((m) => {
-        // User message with image — build multipart content array
-        if (m.imageBase64 && m.imageMimeType && m.role === 'user') {
-          const parts: ContentPart[] = [];
+    const hasImage = messages.some((m) => m.imageBase64 && m.imageMimeType);
+    const hasPriorToolResults = messages.some((m) => m.role === 'tool');
 
-          // Text first, then image (Qwen models prefer this order)
-          if (m.content) {
-            parts.push({ type: 'text', text: m.content });
-          }
-          parts.push({
-            type: 'image_url',
-            image_url: {
-              url: `data:${m.imageMimeType};base64,${m.imageBase64}`,
-            },
-          });
+    if (hasImage && !hasPriorToolResults) {
+      // ── Vision turn: include image, but do NOT pass tool definitions ────────
+      // This prevents Qwen from outputting garbled formats when combining
+      // image understanding with tool-calling in a single pass.
+      // The model will do a clean image analysis; AgentRunner will call us
+      // again (text-only) when it has tool results to incorporate.
+      return this.callGroq(messages, undefined);
+    }
 
-          return { role: 'user', content: parts };
-        }
+    // ── Text / tool-result turn: no image needed, full tool support ──────────
+    return this.callGroq(messages, tools);
+  }
 
-        // Standard text message
-        return {
-          role: m.role as GroqMessage['role'],
+  // ── Core Groq call ──────────────────────────────────────────────────────────
+
+  private async callGroq(
+    messages: ChatMessage[],
+    tools: ToolDefinition[] | undefined
+  ): Promise<AIResponse> {
+    const groqMessages: GroqMessage[] = [];
+
+    for (const m of messages) {
+      if (m.role === 'tool') {
+        // Tool result — must include tool_call_id (use toolName as stable ID)
+        groqMessages.push({
+          role: 'tool',
           content: m.content,
-          ...(m.toolName ? { name: m.toolName } : {}),
-        };
-      });
+          tool_call_id: m.toolName ?? 'tool_result',
+        });
+        continue;
+      }
 
-    // Tool definitions (Qwen models support function calling)
-    const groqTools =
-      tools && tools.length > 0
-        ? tools.map((t) => ({
-            type: 'function' as const,
-            function: {
-              name: t.name,
-              description: t.description,
-              parameters: t.parameters,
-            },
-          }))
-        : undefined;
+      if (m.role === 'assistant') {
+        // Check if this assistant message has associated tool calls stored
+        const msgWithCalls = m as ChatMessage & { toolCalls?: ToolCall[] };
+        if (msgWithCalls.toolCalls && msgWithCalls.toolCalls.length > 0) {
+          // Reconstruct the tool_calls array Qwen needs to match results back
+          groqMessages.push({
+            role: 'assistant',
+            content: m.content || null as unknown as string,
+            tool_calls: msgWithCalls.toolCalls.map((tc) => ({
+              id: (tc as ToolCall & { id?: string }).id ?? tc.name,
+              type: 'function' as const,
+              function: {
+                name: tc.name,
+                arguments: JSON.stringify(tc.args),
+              },
+            })),
+          } as GroqTextMessage);
+          continue;
+        }
+      }
+
+      if (m.imageBase64 && m.imageMimeType && m.role === 'user') {
+        // Vision message — multipart content
+        const parts: ContentPart[] = [];
+        if (m.content) parts.push({ type: 'text', text: m.content });
+        parts.push({
+          type: 'image_url',
+          image_url: { url: `data:${m.imageMimeType};base64,${m.imageBase64}` },
+        });
+        groqMessages.push({ role: 'user', content: parts });
+        continue;
+      }
+
+      // Standard text message
+      groqMessages.push({
+        role: m.role as 'system' | 'user' | 'assistant',
+        content: m.content,
+        ...(m.toolName ? { name: m.toolName } : {}),
+      });
+    }
+
+    const groqTools = tools && tools.length > 0 ? buildToolSchemas(tools) : undefined;
 
     const body: Record<string, unknown> = {
       model: this.modelName,
       messages: groqMessages,
-      // Suppress Qwen's chain-of-thought reasoning — return the final answer directly
       reasoning_effort: 'none',
       ...(groqTools ? { tools: groqTools, tool_choice: 'auto' } : {}),
     };
@@ -129,7 +190,7 @@ export class GroqVisionProvider implements AIProvider {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify(body),
         signal: controller.signal,
@@ -140,10 +201,9 @@ export class GroqVisionProvider implements AIProvider {
 
       if (!response.ok || data.error) {
         const msg = data.error?.message ?? `Groq API error ${response.status}`;
-
         if (response.status === 401 || response.status === 403) {
-          logger.error({ status: response.status }, 'Groq vision: authentication failed');
-          throw new Error('Groq authentication failed. Check that GROQ_API_KEY is correct.');
+          logger.error({ status: response.status }, 'Groq vision: auth failed');
+          throw new Error('Groq authentication failed. Check GROQ_API_KEY.');
         }
         if (response.status === 429) {
           throw Object.assign(
@@ -161,33 +221,21 @@ export class GroqVisionProvider implements AIProvider {
       }
 
       const choice = data.choices?.[0];
-      if (!choice) {
-        throw new Error('Groq returned no choices.');
-      }
+      if (!choice) throw new Error('Groq returned no choices.');
 
-      // Parse tool calls if present
+      // Parse tool calls — attach the tool_call id so AgentRunner can route results back
       const toolCalls: ToolCall[] = [];
       if (choice.message.tool_calls) {
         for (const tc of choice.message.tool_calls) {
           let args: Record<string, unknown> = {};
-          try {
-            args = JSON.parse(tc.function.arguments) as Record<string, unknown>;
-          } catch {
-            logger.warn({ raw: tc.function.arguments }, 'GroqVisionProvider: failed to parse tool call args');
-          }
-          toolCalls.push({ name: tc.function.name, args });
+          try { args = JSON.parse(tc.function.arguments) as Record<string, unknown>; }
+          catch { logger.warn({ raw: tc.function.arguments }, 'GroqVisionProvider: bad tool args'); }
+          toolCalls.push({ name: tc.function.name, args, id: tc.id } as ToolCall & { id: string });
         }
       }
 
-      // Qwen models in thinking mode wrap internal reasoning in <think>...</think>
-      // Strip these tags before returning — the user should only see the final answer
-      const rawContent = choice.message.content ?? null;
-      const content = rawContent
-        ? rawContent.replace(/<think>[\s\S]*?<\/think>/g, '').trim() || rawContent
-        : null;
-
       return {
-        content,
+        content: stripThinking(choice.message.content),
         toolCalls,
         usage: {
           promptTokens: data.usage?.prompt_tokens ?? 0,
@@ -197,17 +245,14 @@ export class GroqVisionProvider implements AIProvider {
     } catch (err) {
       clearTimeout(timeoutId);
       const error = err as Error & { code?: string };
-
       if (error.name === 'AbortError') {
         throw Object.assign(
           new Error('The vision model took too long to respond. Please try again.'),
           { code: 'PROVIDER_UNAVAILABLE' }
         );
       }
-
       if (error.code === 'RATE_LIMIT' || error.code === 'PROVIDER_UNAVAILABLE') throw err;
-
-      logger.error({ err, provider: this.providerName, model: this.modelName }, 'GroqVisionProvider: API call failed');
+      logger.error({ err, model: this.modelName }, 'GroqVisionProvider: API call failed');
       throw err;
     }
   }
