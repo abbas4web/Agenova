@@ -22,6 +22,8 @@ export interface Agent {
   icon: string;
   color: AgentColor;
   allowedTools?: string[];
+  /** Whether this agent accepts image uploads from the user */
+  allowImages?: boolean;
 }
 
 export type AgentColor =

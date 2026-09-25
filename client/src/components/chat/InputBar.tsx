@@ -8,6 +8,8 @@ interface InputBarProps {
   isLoading: boolean;
   placeholder?: string;
   disabled?: boolean;
+  /** When true the image upload button is shown (only for agents that support vision) */
+  showImageUpload?: boolean;
 }
 
 export default function InputBar({
@@ -15,6 +17,7 @@ export default function InputBar({
   isLoading,
   placeholder = 'Message…',
   disabled,
+  showImageUpload = false,
 }: InputBarProps) {
   const [value, setValue] = useState('');
   const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
@@ -73,20 +76,22 @@ export default function InputBar({
             'focus-within:border-brand-500/60 focus-within:bg-surface-800/80'
           )}
         >
-          {/* Image picker */}
-          <ImageUploadButton
-            selectedImage={selectedImage}
-            onImageSelected={setSelectedImage}
-            onImageRemoved={() => setSelectedImage(null)}
-            disabled={disabled || isLoading}
-          />
+          {/* Image picker — only shown for agents that support vision */}
+          {showImageUpload && (
+            <ImageUploadButton
+              selectedImage={selectedImage}
+              onImageSelected={setSelectedImage}
+              onImageRemoved={() => setSelectedImage(null)}
+              disabled={disabled || isLoading}
+            />
+          )}
 
           <textarea
             ref={textareaRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={selectedImage ? 'Add a message or send image…' : placeholder}
+            placeholder={showImageUpload && selectedImage ? 'Add a message or send image…' : placeholder}
             disabled={disabled}
             rows={1}
             aria-label="Message input"

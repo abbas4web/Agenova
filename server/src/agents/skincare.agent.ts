@@ -193,6 +193,7 @@ ALWAYS
 - Warm, calm, professional, empathetic tone — like a knowledgeable friend who happens to be a dermatologist.`,
   allowedTools: ['webSearch'],
   maxTurns: 4,
+  allowImages: true,
 };
 
 AgentRegistry.register(config);

@@ -115,6 +115,8 @@ export interface AgentConfig {
   allowedTools: string[];
   model?: string;          // Override default model
   maxTurns?: number;       // Max tool-call loop iterations (default 5)
+  /** Whether this agent accepts image uploads from the user */
+  allowImages?: boolean;
 }
 
 export interface AgentRunInput {
